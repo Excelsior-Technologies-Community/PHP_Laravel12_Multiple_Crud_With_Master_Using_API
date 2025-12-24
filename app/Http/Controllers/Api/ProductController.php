@@ -9,61 +9,101 @@ use Illuminate\Http\Request;
 class ProductController extends Controller
 {
     // GET: All Products
-  public function index()
+    public function index()
     {
-        $products = Product::with('category')->get()->map(function($product) {
-            return [
-                'id' => $product->id,
-                'name' => $product->name,
-                'price' => $product->price,
-                'category_id' => $product->category_id,
-                'category_name' => $product->category->name ?? null, // single field
-            ];
-        });
+        $products = Product::with('category')->get();
 
-        return response()->json($products);
+        return response()->json([
+            'status' => true,
+            'data' => $products->map(function ($product) {
+                return [
+                    'id'            => $product->id,
+                    'name'          => $product->name,
+                    'price'         => $product->price,
+                    'quantity'      => $product->quantity,
+                    'category_id'   => $product->category_id,
+                    'category_name' => $product->category->name ?? null,
+                ];
+            })
+        ]);
     }
-
-
 
     // POST: Create Product
     public function store(Request $request)
     {
-        $product = Product::create($request->all());
-        return response()->json($product, 201);
+        $request->validate([
+            'category_id' => 'required|exists:categories,id',
+            'name'        => 'required',
+            'price'       => 'required|numeric',
+            'quantity'    => 'required|numeric',
+        ]);
+
+        $product = Product::create([
+            'category_id' => $request->category_id,
+            'name'        => $request->name,
+            'price'       => $request->price,
+            'quantity'    => $request->quantity,
+        ]);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Product created successfully',
+            'data' => $product
+        ], 201);
     }
 
     // GET: Single Product
-
- public function show($id)
+    public function show($id)
     {
         $product = Product::with('category')->findOrFail($id);
 
-        $result = [
-            'id' => $product->id,
-            'name' => $product->name,
-            'price' => $product->price,
-            'category_id' => $product->category_id,
-            'category_name' => $product->category->name ?? null,
-        ];
-
-        return response()->json($result);
+        return response()->json([
+            'status' => true,
+            'data' => [
+                'id'            => $product->id,
+                'name'          => $product->name,
+                'price'         => $product->price,
+                'quantity'      => $product->quantity,
+                'category_id'   => $product->category_id,
+                'category_name' => $product->category->name ?? null,
+            ]
+        ]);
     }
-    // PUT: Update Product
-   // POST: Update Product (instead of PUT)
-public function update(Request $request, $id)
-{
-    $product = Product::findOrFail($id);
-    $product->update($request->all());
 
-    return response()->json($product);
-}
+    // POST: Update Product
+    public function update(Request $request, $id)
+    {
+        $request->validate([
+          
+            'name'        => 'required',
+            'price'       => 'required|numeric',
+            'quantity'    => 'required|numeric',
+        ]);
 
-// POST: Delete Product (instead of DELETE)
-public function destroy($id)
-{
-    Product::findOrFail($id)->delete();
-    return response()->json(['message' => 'Product Deleted']);
-}
+        $product = Product::findOrFail($id);
 
+        $product->update([
+        
+            'name'        => $request->name,
+            'price'       => $request->price,
+            'quantity'    => $request->quantity,
+        ]);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Product updated successfully',
+            'data' => $product
+        ]);
+    }
+
+    // POST: Delete Product
+    public function destroy($id)
+    {
+        Product::findOrFail($id)->delete();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Product deleted successfully'
+        ]);
+    }
 }
