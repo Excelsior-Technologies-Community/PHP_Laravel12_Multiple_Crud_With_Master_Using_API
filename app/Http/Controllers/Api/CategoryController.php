@@ -1,79 +1,102 @@
 <?php
+// app/Http/Controllers/Api/CategoryController.php
 
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CategoryStoreRequest;
+use App\Http\Resources\CategoryResource;
 use App\Models\Category;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 
 class CategoryController extends Controller
 {
-    // GET: All Categories
-    public function index()
+    use ApiResponseTrait;
+
+    // GET: All Categories with Pagination
+    public function index(Request $request)
     {
-        return response()->json(Category::all());
+        $perPage = $request->per_page ?? 10;
+        $categories = Category::withCount('products')->paginate($perPage);
+        
+        return $this->paginatedResponse($categories);
+    }
+
+    // GET: All Categories List (Without Pagination for dropdowns)
+    public function list()
+    {
+        $categories = Category::all(['id', 'name']);
+        return $this->successResponse($categories, 'Categories retrieved successfully');
     }
 
     // POST: Create Category
-    public function store(Request $request)
+    public function store(CategoryStoreRequest $request)
     {
-        $category = Category::create([
-            'name' => $request->name
-        ]);
-
-        return response()->json($category, 201);
+        $category = Category::create($request->validated());
+        return $this->successResponse(new CategoryResource($category), 'Category created successfully', 201);
     }
 
-    // GET: Single Category
+    // GET: Single Category with Products
     public function show($id)
     {
-        return response()->json(Category::findOrFail($id));
+        $category = Category::with(['products' => function($query) {
+            $query->with(['category', 'size']);
+        }])->findOrFail($id);
+        
+        return $this->successResponse(new CategoryResource($category), 'Category retrieved successfully');
     }
 
-    // PUT: Update Category
-// POST: Update Category (instead of PUT)
-public function update(Request $request, $id)
-{
-    $category = Category::findOrFail($id);
-    $category->update($request->all());
+    // POST: Update Category
+    public function update(Request $request, $id)
+    {
+        $category = Category::findOrFail($id);
+        
+        $request->validate([
+            'name' => 'required|string|max:100|unique:categories,name,' . $id
+        ]);
+        
+        $category->update($request->only('name'));
+        return $this->successResponse(new CategoryResource($category), 'Category updated successfully');
+    }
 
-    return response()->json($category);
-}
+    // POST: Delete Category (Soft Delete)
+    public function destroy($id)
+    {
+        $category = Category::findOrFail($id);
+        
+        // Check if category has products
+        if ($category->products()->count() > 0) {
+            return $this->errorResponse('Cannot delete category with existing products', null, 422);
+        }
+        
+        $category->delete();
+        return $this->successResponse(null, 'Category deleted successfully');
+    }
 
-// POST: Delete Category (instead of DELETE)
-public function destroy($id)
-{
-    Category::findOrFail($id)->delete();
-    return response()->json(['message' => 'Category Deleted']);
-}
-
-    // GET: Category with Products (MASTER)
+    // GET: Category with Products (MASTER DETAIL)
     public function categoryProducts($id)
     {
-        $category = Category::with('products')->findOrFail($id);
-        return response()->json($category);
+        $category = Category::with(['products' => function($query) {
+            $query->with(['size'])->latest();
+        }])->findOrFail($id);
+        
+        return $this->successResponse([
+            'category' => [
+                'id' => $category->id,
+                'name' => $category->name,
+            ],
+            'total_products' => $category->products->count(),
+            'products' => $category->products->map(function($product) {
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'price' => $product->price,
+                    'quantity' => $product->quantity,
+                    'size' => $product->size->name ?? 'N/A',
+                    'stock_status' => $product->quantity > 0 ? 'In Stock' : 'Out of Stock'
+                ];
+            })
+        ], 'Category products retrieved successfully');
     }
-
-    public function allProductsWithCategory()
-{
-    // Get all products with their category using Eloquent relationship
-    $products = \App\Models\Product::with('category')->get();
-
-    // Format response nicely
-    $data = $products->map(function($product) {
-        return [
-            'product_id' => $product->id,
-            'product_name' => $product->name,
-            'product_price' => $product->price,
-            'category_id' => $product->category->id ?? null,
-            'category_name' => $product->category->name ?? null,
-        ];
-    });
-
-    return response()->json([
-        'total' => $data->count(),
-        'products' => $data
-    ]);
-}
-
 }
